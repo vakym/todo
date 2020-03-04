@@ -28,17 +28,17 @@ namespace ToDoList
 
 
         [Test]
-        public void Mark_Done_After_Removal()
+        public void Mark_Done_After_Removal(
+            [Values(userA, userB, userC)] int removingUserId,
+            [Values(200, 101, 100)] long removingTimestamp,
+            [Values(userA, userB, userC)] int markDoneUserId,
+            [Values(200, 101, 100)] long markDoneTimestamp)
         {
-
-            list.RemoveEntry(42, userA, 99);
-
-            list.MarkDone(42, userA,98);
-
-           // list.AddEntry(42, userA, "Build project", 103);
-
-            var l = list.ToArray();
-            AssertEntries(Entry.Done(42, "Build project"));
+            list.AddEntry(42, removingUserId, "", removingTimestamp);
+            list.RemoveEntry(42, removingUserId, removingTimestamp);
+            list.MarkDone(42, markDoneUserId, markDoneTimestamp);
+           
+            AssertEntries(Entry.Done(42, ""));
         }
 
 

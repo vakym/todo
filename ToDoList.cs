@@ -261,7 +261,7 @@ namespace ToDoList
 
         public void AddArgument(string name, object value)
         {
-            throw new NotImplementedException();
+            throw new NotSupportedException();
         }
 
         public Entry Invoke(Entry entry)

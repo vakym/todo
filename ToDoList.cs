@@ -13,6 +13,8 @@ namespace ToDoList
         
 
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
+        private readonly EntryWarehouse<int, CalculatedEntity<long, Entry>> entities = new EntryWarehouse<int, CalculatedEntity<long, Entry>>();
+
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
@@ -46,11 +48,7 @@ namespace ToDoList
 
         public IEnumerator<Entry> GetEnumerator()
         {
-            foreach (var item in entries)
-            {
-                if(item.Value.CurrentEntry != null)
-                    yield return item.Value.CurrentEntry;
-            }
+            throw new NotImplementedException();
         }
 
         IEnumerator IEnumerable.GetEnumerator()
@@ -123,26 +121,48 @@ namespace ToDoList
         }
     }
 
-    public interface ICalculatedEntity
+    public interface ICalculatedEntity<out TEntry>
     {
-        IUser User { get; }
-
         bool IsRemoved { get; }
+        TEntry Entry { get; }
     }
 
-    public class CalculatedEntity : ICalculatedEntity
+    public class CalculatedEntity<TTimestamp,TEntry> : ICalculatedEntity<TEntry> where TTimestamp : struct
     {
-        public IUser User => throw new NotImplementedException();
+        public bool IsRemoved { get; private set; }
 
-        public bool IsRemoved => throw new NotImplementedException();
+        public TEntry Entry => throw new NotImplementedException();
 
-        public CalculatedEntity()
+        private readonly ConflictSolver<IStateChanger<TTimestamp, IUser>> conflictSolver 
+                                                        = new ConflictSolver<IStateChanger<TTimestamp, IUser>>();
+
+        public CalculatedEntity(ConflictSolver<IStateChanger<TTimestamp, IUser>> conflictSolver)
         {
-
+            this.conflictSolver = conflictSolver;
         }
     }
 
-    public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> where TEntry : ICalculatedEntity
+    public interface IStateChanger<TTimeStamp,TUser> where TUser : IUser
+    {
+        TTimeStamp TimeStamp { get; }
+        TUser User { get; }
+    }
+
+    public interface IConflictSolver<TState>
+    {
+        IEnumerable<TState> Solve(IEnumerable<TState> states);
+    }
+
+    public class ConflictSolver<TState> : IConflictSolver<TState>
+    {
+        public IEnumerable<TState> Solve(IEnumerable<TState> states)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+
+    public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> where TEntry : ICalculatedEntity<TEntry>
     {
         private readonly Dictionary<TKey, TEntry> entries = new Dictionary<TKey, TEntry>();
 

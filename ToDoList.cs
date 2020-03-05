@@ -227,7 +227,7 @@ namespace ToDoList
     #endregion
 
     #region entry logic
-    public class CalculatedEntry<TTimestamp,TEntry>
+    public class CalculatedEntry<TTimestamp,TEntry> where TTimestamp : struct
     {
         private readonly SortedDictionary<TTimestamp, LinkedList<ChangeState<Removable<TEntry>>>> states;
                       
@@ -316,6 +316,7 @@ namespace ToDoList
     public static class CalculatedEntry
     {
         public static CalculatedEntry<TTimeStamp,TEntry> Create<TTimeStamp, TEntry>() 
+            where TTimeStamp : struct
         {
             return new CalculatedEntry<TTimeStamp, TEntry>();
         }

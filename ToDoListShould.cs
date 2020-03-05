@@ -180,6 +180,15 @@ namespace ToDoList
         }
 
         [Test]
+        public void Not_Add_Item_When_It_Was_Removed_With_Greater_Timestamp()
+        {
+            list.RemoveEntry(42, userA, 101);
+            list.AddEntry(42, userA, "Introduce autotests", 100);
+            AssertListEmpty();
+        }
+
+
+        [Test]
         public void Dismiss_Done()
         {
             list.AddEntry(42, userA, "Introduce autotests", 100);

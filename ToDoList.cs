@@ -50,12 +50,13 @@ namespace ToDoList
                 if (currentState != null)
                 {
                     newEntry = currentState.Value.MarkDone();
+                    return Removable.CreateNotRemoved(newEntry);
                 }
                 else
                 {
                     newEntry = Entry.Done(entryId, "");
+                    return Removable.CreateRemoved(newEntry);
                 }
-                return Removable.CreateRemoved(newEntry);
             });
         }
 
@@ -68,12 +69,13 @@ namespace ToDoList
                 if (currentState != null)
                 {
                     newEntry = currentState.Value.MarkUndone();
+                    return Removable.CreateNotRemoved(newEntry);
                 }
                 else
                 {
                     newEntry = Entry.Undone(entryId, "");
+                    return Removable.CreateRemoved(newEntry);
                 }
-                return Removable.CreateNotRemoved(newEntry);
             });
         }
 

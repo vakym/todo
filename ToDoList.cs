@@ -9,7 +9,7 @@ namespace ToDoList
     {
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
         private readonly Dictionary<int, CalculatedEntity<long, Entry>> entities
-                                                        = new Dictionary<int, CalculatedEntity<long, Entry>>();
+                                          = new Dictionary<int, CalculatedEntity<long, Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
@@ -143,7 +143,8 @@ namespace ToDoList
             }).AddConflicSolveRule((actions) => 
             {
                 var statesNodes = actions.Nodes()
-                                         .Where(n => n.Value.StateTypeId == 2 && n.Value.StateTypeId == 3)
+                                         .Where(n => n.Value.StateTypeId == 2 
+                                                     && n.Value.StateTypeId == 3)
                                          .OrderBy(n => n.Value.StateTypeId);
                 var first = statesNodes.FirstOrDefault();
                 var last = statesNodes.LastOrDefault();
@@ -224,10 +225,10 @@ namespace ToDoList
     public class CalculatedEntity<TTimestamp,TEntry>
     {
         private SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>> states 
-                                                                    = new SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>>();
+                      = new SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>>();
 
         private readonly List<Action<LinkedList<StateChanger<Removable<TEntry>>>>> solveConflicRules 
-                                                                       = new List<Action<LinkedList<StateChanger<Removable<TEntry>>>>>();
+                                      = new List<Action<LinkedList<StateChanger<Removable<TEntry>>>>>();
         private bool rebuildNeeded = true;
 
         private Removable<TEntry> entry;
@@ -242,7 +243,11 @@ namespace ToDoList
             }
         }
 
-        public void AddState(TTimestamp timestamp,int typeId, IUser user, Func<Removable<TEntry>, Removable<TEntry>> action)
+        public void AddState(TTimestamp timestamp,
+                             int typeId,
+                             IUser user,
+                             Func<Removable<TEntry>,
+                             Removable<TEntry>> action)
         {
             rebuildNeeded = true;
             var state = new StateChanger<Removable<TEntry>>(user, action, typeId);
@@ -260,7 +265,8 @@ namespace ToDoList
             states.Add(timestamp, linkedList);
         }
 
-        public CalculatedEntity<TTimestamp, TEntry> AddConflicSolveRule(Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
+        public CalculatedEntity<TTimestamp, TEntry> AddConflicSolveRule(
+                                             Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
         {
             solveConflicRules.Add(rule);
             return this;

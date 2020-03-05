@@ -13,12 +13,13 @@ namespace ToDoList
         
 
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
-        private readonly EntryWarehouse<int, ICalculatedEntity<Entry>> entities = new EntryWarehouse<int, ICalculatedEntity<Entry>>();
+        private readonly Dictionary<int, ICalculatedEntity<Entry>> entities = new Dictionary<int, ICalculatedEntity<Entry>>();
 
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
-            
+            var entity = GetEntity(entryId);
+           
         }
 
         public void RemoveEntry(int entryId, int userId, long timestamp)
@@ -50,8 +51,8 @@ namespace ToDoList
         {
             foreach (var cEntry in entities)
             {
-                if (!cEntry.IsRemoved)
-                    yield return cEntry.Entry;
+                if (!cEntry.Value.IsRemoved)
+                    yield return cEntry.Value.Entry;
             }
         }
 
@@ -60,8 +61,24 @@ namespace ToDoList
             return GetEnumerator();
         }
 
-        public int Count { get => entities.Where(entry => !entry.IsRemoved)
+        public int Count { get => entities.Where(entry => !entry.Value.IsRemoved)
                                           .Count(); }
+
+        private CalculatedEntity<Entry> GetEntity(int key)
+        {
+            if (entities.TryGetValue(key, out var entity))
+                return entity as CalculatedEntity<Entry>;
+            entity = CalculatedEntity.Create<Entry>();
+            SetConflicSolveRules(entity as CalculatedEntity<Entry>);
+            entities.Add(key, entity);
+            return entity as CalculatedEntity<Entry>;
+        }
+
+        private void SetConflicSolveRules(CalculatedEntity<Entry> entity)
+        {
+
+        }
+
     }
 
     #region users
@@ -127,7 +144,49 @@ namespace ToDoList
         }
     }
     #endregion
+    //public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> 
+    //{
+    //    private readonly Dictionary<TKey, TEntry> entries = new Dictionary<TKey,TEntry>();
 
+    //    public int Count => entries.Count;
+
+    //    public void Add(TKey id, TEntry entity)
+    //    {
+    //        if (entries.ContainsKey(id)) throw new InvalidOperationException();
+    //        entries.Add(id, entity);
+    //    }
+
+    //    public void RemoveById(TKey id)
+    //    {
+    //        if (!entries.ContainsKey(id)) throw new InvalidOperationException();
+    //        entries.Remove(id);
+    //    }
+
+    //    public TEntry GetById(TKey id)
+    //    {
+    //        if (entries.TryGetValue(id, out var value))
+    //            return value;
+    //        return default;
+    //    }
+
+    //    public bool Contains(TKey key)
+    //    {
+    //        return entries.ContainsKey(key);
+    //    }
+
+    //    public IEnumerator<TEntry> GetEnumerator()
+    //    {
+    //        foreach (var item in entries.Values)
+    //        {
+    //                yield return item;
+    //        }
+    //    }
+
+    //    IEnumerator IEnumerable.GetEnumerator()
+    //    {
+    //        return GetEnumerator();
+    //    }
+    //}
     public interface ICalculatedEntity<out TEntry>
     {
         bool IsRemoved { get; }
@@ -136,20 +195,57 @@ namespace ToDoList
 
     public class CalculatedEntity<TEntry> : ICalculatedEntity<TEntry>
     {
-        public bool IsRemoved { get; private set; }
+        
 
-        public TEntry Entry => throw new NotImplementedException();
+        private LinkedList<Tuple<long, IStateChanger<IUser>>> states = new LinkedList<Tuple<long, IStateChanger<IUser>>>();
 
-        public SortedList<long,IStateChanger<IUser>> states = new SortedList<long,IStateChanger<IUser>>();
+        private readonly List<Func<IStateChanger<IUser>>> solveConflicRules = new List<Func<IStateChanger<IUser>>>();
 
-        private readonly IConflictSolver<IStateChanger<IUser>> conflictSolver;                                          
+        private bool rebuildNeeded = true;
 
-        public CalculatedEntity(IConflictSolver<IStateChanger<IUser>> conflictSolver)
+        private Entry entry;
+
+        public CalculatedEntity()
         {
-            this.conflictSolver = conflictSolver;
         }
 
-       
+        public bool IsRemoved { get; private set; }
+
+        public TEntry Entry
+        {
+            get
+            {
+                if (rebuildNeeded)
+                    Build();
+                return entry;
+            }
+        }
+
+        public CalculatedEntity<TEntry> AddConflicSolveRule(Func<IStateChanger<IUser>> rule)
+        {
+            solveConflicRules.Add(rule);
+            return this;
+        }
+
+        private void Build()
+        {
+
+            foreach (var action in states)
+            {
+                if(!action.Item2.User.IsDismiss)
+                {
+                    entry = 
+                }
+            }
+        }
+    }
+
+    public static class CalculatedEntity
+    {
+        public static CalculatedEntity<T> Create<T>()
+        {
+            return new CalculatedEntity<T>();
+        }
     }
 
     public interface IStateChanger<TUser> where TUser : IUser
@@ -157,59 +253,5 @@ namespace ToDoList
         long TimeStamp { get; }
         TUser User { get; }
     }
-
-    public interface IConflictSolver<TState>
-    {
-        IEnumerable<TState> Solve(IEnumerable<TState> states);
-    }
-
-    public class ConflictSolver<TState> : IConflictSolver<TState>
-    {
-        public IEnumerable<TState> Solve(IEnumerable<TState> states)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-
-    public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> 
-    {
-        private readonly Dictionary<TKey, TEntry> entries = new Dictionary<TKey,TEntry>();
-
-        public int Count => entries.Count;
-
-        public void Add(TKey id, TEntry entity)
-        {
-            if (entries.ContainsKey(id)) throw new InvalidOperationException();
-            entries.Add(id, entity);
-        }
-
-        public void RemoveById(TKey id)
-        {
-            if (!entries.ContainsKey(id)) throw new InvalidOperationException();
-            entries.Remove(id);
-        }
-
-        public TEntry GetById(TKey id)
-        {
-            if (entries.TryGetValue(id, out var value))
-                return value;
-            return default;
-        }
-
-        public IEnumerator<TEntry> GetEnumerator()
-        {
-            foreach (var item in entries.Values)
-            {
-                    yield return item;
-            }
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-    }
-
-    
+ 
 }

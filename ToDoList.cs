@@ -32,7 +32,7 @@ namespace ToDoList
 
         public void RemoveEntry(int entryId, int userId, long timestamp)
         {
-            ProcessEntry(entryId, timestamp, userId, (currentEntry) =>
+            ProcessEntry(entryId, timestamp, userId, 1, (currentEntry) =>
             {
                 return currentEntry != null ? Removable.CreateRemoved(currentEntry.Value) :
                                               Removable.CreateRemoved(Entry.Undone(entryId, "")) ;
@@ -41,7 +41,7 @@ namespace ToDoList
 
         public void MarkDone(int entryId, int userId, long timestamp)
         {
-            ProcessEntry(entryId, timestamp, userId, (currentEntry) =>
+            ProcessEntry(entryId, timestamp, userId, 2, (currentEntry) =>
             {
                 Entry newEntry = null;
                 if (currentEntry != null)
@@ -59,7 +59,7 @@ namespace ToDoList
 
         public void MarkUndone(int entryId, int userId, long timestamp)
         {
-            ProcessEntry(entryId,timestamp,userId, (currentEntry) =>
+            ProcessEntry(entryId,timestamp,userId, 3, (currentEntry) =>
             {
                 Entry newEntry = null;
                 if (currentEntry != null)
@@ -105,10 +105,11 @@ namespace ToDoList
         private void ProcessEntry(int entryId,
                                  long timestamp,
                                  int userId,
+                                 int typestateId,
                                  Func<Removable<Entry>, Removable<Entry>> action)
         {
             var entry = GetEntry(entryId);
-            entry.AddState(timestamp, 3, usersWarehouse.GetUserById(userId), action);
+            entry.AddState(timestamp, typestateId, usersWarehouse.GetUserById(userId), action);
         }
 
         private CalculatedEntry<long,Entry> GetEntry(int key)

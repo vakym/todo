@@ -37,7 +37,8 @@ namespace ToDoList
             var entity = GetEntity(entryId);
             entity.AddState(timestamp,1, usersWarehouse.GetUserById(userId), (currentState) =>
             {
-                return Removable.CreateRemoved(currentState.Value);
+                return currentState!= null ?  Removable.CreateRemoved(currentState.Value) :
+                                              Removable.CreateRemoved(Entry.Undone(entryId, "")) ;
             });
         }
 
@@ -119,7 +120,8 @@ namespace ToDoList
             entity.AddConflicSolveRule((actions) =>
             {
                 var removeNodes = actions.Nodes()
-                                         .Where(n => n.Value.StateTypeId == 1);
+                                         .Where(n => n.Value.StateTypeId == 1)
+                                         .ToList();
                 foreach (var node in removeNodes)
                 {
                     actions.Remove(node);
@@ -130,14 +132,25 @@ namespace ToDoList
                 var addNodes = actions.Nodes()
                                       .Where(n => n.Value.StateTypeId == 0)
                                       .OrderByDescending(n => n.Value.User.Id);
-                actions.Remove(addNodes.First());
-                actions.AddAfter(addNodes.Last(), addNodes.First());
-            }).AddConflicSolveRule((actions) => {
+                var first = addNodes.FirstOrDefault();
+                var last = addNodes.LastOrDefault();
+                if (first != null && first != last)
+                {
+                    actions.Remove(last);
+                    actions.AddAfter(first, last);
+                }
+            }).AddConflicSolveRule((actions) => 
+            {
                 var statesNodes = actions.Nodes()
                                          .Where(n => n.Value.StateTypeId == 2 && n.Value.StateTypeId == 3)
                                          .OrderBy(n => n.Value.StateTypeId);
-                actions.Remove(statesNodes.First());
-                actions.AddAfter(statesNodes.Last(), statesNodes.First());
+                var first = statesNodes.FirstOrDefault();
+                var last = statesNodes.LastOrDefault();
+                if (first != null && first != last)
+                {
+                    actions.Remove(first);
+                    actions.AddAfter(last, first);
+                }
             });
         }
 
@@ -253,7 +266,17 @@ namespace ToDoList
         }
 
         private void Build()
-        { 
+        {
+            var firstAddAction = states.FirstOrDefault(v => v.Value.First.Value.StateTypeId == 0);
+            if( firstAddAction.Value != null)
+            {
+                var firstAddActionUser = firstAddAction.Value.First.Value.User;
+                if(firstAddActionUser.IsDismiss)
+                {
+                    entry = Removable.CreateRemoved(default(TEntry));
+                    return;
+                }
+            }
             foreach (var actions in states.Values)
             {
                 foreach (var action in actions)

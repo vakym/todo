@@ -11,7 +11,7 @@ namespace ToDoList
     public class ToDoList : IToDoList
     {
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
-        private readonly Dictionary<int, CalculatedEntity<Entry>> entities = new Dictionary<int, CalculatedEntity<Entry>>();
+        private readonly Dictionary<int, CalculatedEntity<long, Entry>> entities = new Dictionary<int, CalculatedEntity<long, Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
@@ -105,17 +105,17 @@ namespace ToDoList
         public int Count { get => entities.Where(entry => !entry.Value.Entry.Removed)
                                           .Count(); }
 
-        private CalculatedEntity<Entry> GetEntity(int key)
+        private CalculatedEntity<long,Entry> GetEntity(int key)
         {
             if (entities.TryGetValue(key, out var entity))
-                return entity as CalculatedEntity<Entry>;
-            entity = CalculatedEntity.Create<Entry>();
-            SetConflicSolveRules(entity as CalculatedEntity<Entry>);
+                return entity as CalculatedEntity<long, Entry>;
+            entity = CalculatedEntity.Create<long, Entry>();
+            SetConflicSolveRules(entity as CalculatedEntity<long, Entry>);
             entities.Add(key, entity);
-            return entity as CalculatedEntity<Entry>;
+            return entity as CalculatedEntity<long, Entry>;
         }
 
-        private void SetConflicSolveRules(CalculatedEntity<Entry> entity)
+        private void SetConflicSolveRules(CalculatedEntity<long, Entry> entity)
         {
             entity.AddConflicSolveRule((actions) =>
             {
@@ -220,10 +220,10 @@ namespace ToDoList
     }
     #endregion
 
-    public class CalculatedEntity<TEntry>
+    public class CalculatedEntity<TTimestamp,TEntry>
     {
-        private SortedDictionary<long, LinkedList<StateChanger<Removable<TEntry>>>> states 
-                                                                    = new SortedDictionary<long, LinkedList<StateChanger<Removable<TEntry>>>>();
+        private SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>> states 
+                                                                    = new SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>>();
 
         private readonly List<Action<LinkedList<StateChanger<Removable<TEntry>>>>> solveConflicRules 
                                                                        = new List<Action<LinkedList<StateChanger<Removable<TEntry>>>>>();
@@ -241,7 +241,7 @@ namespace ToDoList
             }
         }
 
-        public void AddState(long timestamp,int typeId, IUser user, Func<Removable<TEntry>, Removable<TEntry>> action)
+        public void AddState(TTimestamp timestamp,int typeId, IUser user, Func<Removable<TEntry>, Removable<TEntry>> action)
         {
             rebuildNeeded = true;
             var state = new StateChanger<Removable<TEntry>>(user, action, typeId);
@@ -259,7 +259,7 @@ namespace ToDoList
             states.Add(timestamp, linkedList);
         }
 
-        public CalculatedEntity<TEntry> AddConflicSolveRule(Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
+        public CalculatedEntity<TTimestamp, TEntry> AddConflicSolveRule(Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
         {
             solveConflicRules.Add(rule);
             return this;
@@ -293,9 +293,9 @@ namespace ToDoList
 
     public static class CalculatedEntity
     {
-        public static CalculatedEntity<T> Create<T>() 
+        public static CalculatedEntity<TTimeStamp,TEntry> Create<TTimeStamp, TEntry>() 
         {
-            return new CalculatedEntity<T>();
+            return new CalculatedEntity<TTimeStamp, TEntry>();
         }
     }
 
@@ -314,8 +314,10 @@ namespace ToDoList
 
     public static class Removable
     {
-        public static Removable<T> CreateRemoved<T>(T value) => new Removable<T>(true, value);
-        public static Removable<T> CreateNotRemoved<T>(T value) => new Removable<T>(false, value);
+        public static Removable<T> CreateRemoved<T>(T value) 
+                                                => new Removable<T>(true, value);
+        public static Removable<T> CreateNotRemoved<T>(T value)
+                                                => new Removable<T>(false, value);
     }
 
     public class StateChanger<TEntry>

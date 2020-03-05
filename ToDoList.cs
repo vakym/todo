@@ -2,16 +2,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-/// <summary>
-/// Решение нуждаеться в глубоком рефакторинге. 
-/// Это первая версия.
-/// </summary>
+
 namespace ToDoList
 {
     public class ToDoList : IToDoList
     {
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
-        private readonly Dictionary<int, CalculatedEntity<long, Entry>> entities = new Dictionary<int, CalculatedEntity<long, Entry>>();
+        private readonly Dictionary<int, CalculatedEntity<long, Entry>> entities
+                                                        = new Dictionary<int, CalculatedEntity<long, Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
@@ -21,7 +19,8 @@ namespace ToDoList
                 Entry newEntry = null;
                 if (currentState != null)
                 {
-                    newEntry = currentState.Value.State == EntryState.Done ? Entry.Done(entryId, name) : Entry.Undone(entryId, name);
+                    newEntry = currentState.Value.State == EntryState.Done ? Entry.Done(entryId, name) :
+                                                                             Entry.Undone(entryId, name);
                 }
                 else
                 {

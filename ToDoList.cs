@@ -2,52 +2,81 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-/// <summary>
-/// Решение нуждаеться в глубоком рефакторинге. 
-/// Это первая версия.
-/// </summary>
+
 namespace ToDoList
 {
     public class ToDoList : IToDoList
     {
-        private readonly Dictionary<int, EntryHistory> entries = new Dictionary<int, EntryHistory>();
-
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
+        private readonly Dictionary<int, CalculatedEntity<long, Entry>> entities
+                                          = new Dictionary<int, CalculatedEntity<long, Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
-            var user = usersWarehouse.GetUserById(userId);
-            if(!entries.ContainsKey(entryId))
-               entries.Add(entryId, EntryHistory.Create(entryId, user, name, timestamp));
-            var a = new AddAction(timestamp, user);
-            a.AddArgument("Name", name);
-            entries[entryId].AddState(a);
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,0, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.State == EntryState.Done ? Entry.Done(entryId, name) :
+                                                                             Entry.Undone(entryId, name);
+                }
+                else
+                {
+                    newEntry = Entry.Undone(entryId, name);
+                }
+                return Removable.CreateNotRemoved(newEntry);
+            });
+           
         }
 
         public void RemoveEntry(int entryId, int userId, long timestamp)
         {
-            var user = usersWarehouse.GetUserById(userId);
-            if (entries.ContainsKey(entryId))
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,1, usersWarehouse.GetUserById(userId), (currentState) =>
             {
-                entries[entryId].AddState(new RemoveAction(timestamp, user));
-            }
+                return currentState!= null ?  Removable.CreateRemoved(currentState.Value) :
+                                              Removable.CreateRemoved(Entry.Undone(entryId, "")) ;
+            });
         }
 
         public void MarkDone(int entryId, int userId, long timestamp)
         {
-            var user = usersWarehouse.GetUserById(userId);
-            if (!entries.ContainsKey(entryId))
-                entries.Add(entryId, EntryHistory.Create(entryId, user, "", timestamp));
-            entries[entryId].AddState(new MarkDone(timestamp, user));
-           
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,2, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.MarkDone();
+                    return Removable.CreateNotRemoved(newEntry);
+                }
+                else
+                {
+                    newEntry = Entry.Done(entryId, "");
+                    return Removable.CreateRemoved(newEntry);
+                }
+            });
         }
 
         public void MarkUndone(int entryId, int userId, long timestamp)
         {
-            var user = usersWarehouse.GetUserById(userId);
-            if (!entries.ContainsKey(entryId))
-                entries.Add(entryId, EntryHistory.Create(entryId, user, "", timestamp));
-            entries[entryId].AddState(new MarkUnDone(timestamp, user));
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,3, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.MarkUndone();
+                    return Removable.CreateNotRemoved(newEntry);
+                }
+                else
+                {
+                    newEntry = Entry.Undone(entryId, "");
+                    return Removable.CreateRemoved(newEntry);
+                }
+            });
         }
 
         public void DismissUser(int userId)
@@ -62,10 +91,10 @@ namespace ToDoList
 
         public IEnumerator<Entry> GetEnumerator()
         {
-            foreach (var item in entries)
+            foreach (var cEntry in entities)
             {
-                if(item.Value.CurrentEntry != null)
-                    yield return item.Value.CurrentEntry;
+                if (!cEntry.Value.Entry.Removed)
+                    yield return cEntry.Value.Entry.Value;
             }
         }
 
@@ -74,9 +103,62 @@ namespace ToDoList
             return GetEnumerator();
         }
 
-        public int Count { get => entries.Where(e => e.Value.CurrentEntry != null).Count(); }
+        public int Count { get => entities.Where(entry => !entry.Value.Entry.Removed)
+                                          .Count(); }
+
+        private CalculatedEntity<long,Entry> GetEntity(int key)
+        {
+            if (entities.TryGetValue(key, out var entity))
+                return entity as CalculatedEntity<long, Entry>;
+            entity = CalculatedEntity.Create<long, Entry>();
+            SetConflicSolveRules(entity as CalculatedEntity<long, Entry>);
+            entities.Add(key, entity);
+            return entity as CalculatedEntity<long, Entry>;
+        }
+
+        private void SetConflicSolveRules(CalculatedEntity<long, Entry> entity)
+        {
+            entity.AddConflicSolveRule((actions) =>
+            {
+                var removeNodes = actions.Nodes()
+                                         .Where(n => n.Value.StateTypeId == 1)
+                                         .ToList();
+                foreach (var node in removeNodes)
+                {
+                    actions.Remove(node);
+                    actions.AddLast(node);
+                }
+            }).AddConflicSolveRule((actions) =>
+            {
+                var addNodes = actions.Nodes()
+                                      .Where(n => n.Value.StateTypeId == 0)
+                                      .OrderByDescending(n => n.Value.User.Id);
+                var first = addNodes.FirstOrDefault();
+                var last = addNodes.LastOrDefault();
+                if (first != null && first != last)
+                {
+                    actions.Remove(last);
+                    actions.AddAfter(first, last);
+                }
+            }).AddConflicSolveRule((actions) => 
+            {
+                var statesNodes = actions.Nodes()
+                                         .Where(n => n.Value.StateTypeId == 2 
+                                                     && n.Value.StateTypeId == 3)
+                                         .OrderBy(n => n.Value.StateTypeId);
+                var first = statesNodes.FirstOrDefault();
+                var last = statesNodes.LastOrDefault();
+                if (first != null && first != last)
+                {
+                    actions.Remove(first);
+                    actions.AddAfter(last, first);
+                }
+            });
+        }
+
     }
 
+    #region users
     public interface IUser
     {
         int Id { get; }
@@ -138,180 +220,139 @@ namespace ToDoList
 
         }
     }
+    #endregion
 
-    public class EntryHistory
+    public class CalculatedEntity<TTimestamp,TEntry>
     {
-       
-        public Entry CurrentEntry { get => Build(); }
+        private SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>> states 
+                      = new SortedDictionary<TTimestamp, LinkedList<StateChanger<Removable<TEntry>>>>();
 
-        public bool IsRemoved { get; private set; }
+        private readonly List<Action<LinkedList<StateChanger<Removable<TEntry>>>>> solveConflicRules 
+                                      = new List<Action<LinkedList<StateChanger<Removable<TEntry>>>>>();
+        private bool rebuildNeeded = true;
 
-        public int Id { get => baseEntry.Id; }
+        private Removable<TEntry> entry;
 
-        private readonly Entry baseEntry;
-
-        private List<IStateAction> states = new List<IStateAction>();
-
-        public EntryHistory(int entryId, IUser user, string name, long timestamp)
+        public Removable<TEntry> Entry
         {
-            baseEntry = Entry.Undone(entryId, name);
-           // states.Add(new AddAction(timestamp, user));
-        }
-
-        public void AddState(IStateAction stateChanger)
-        {
-            states.Add(stateChanger);
-            states = states.GroupBy(g => g.Timestamp)
-                           .Select(x => Tuple.Create(x.Key,x.OrderBy(u=>u.User.Id)))
-                           .OrderBy(key => key)
-                           .SelectMany(t => SolveConflict(t.Item2))
-                           .ToList();
-        }
-
-        public static EntryHistory Create(int entryId, IUser user, string name, long timestamp)
-        {
-            return new EntryHistory(entryId, user, name, timestamp);
-        }
-
-
-        private static IEnumerable<IStateAction> SolveConflict(IEnumerable<IStateAction> stateActions)
-        {
-            if(stateActions.Any(i=>i is RemoveAction))
+            get
             {
-                yield return stateActions.First(i => i is RemoveAction);
-                yield break;
-            }
-            if(stateActions.Any(i=> i is MarkUnDone))
-            {
-                stateActions = stateActions.Where(i => !(i is MarkDone));
-            }
-            var add = stateActions.Where(i => i is AddAction).OrderBy(i => i.User.Id).FirstOrDefault();
-            if(add!=null)
-                stateActions = stateActions.Where(i => !(i is AddAction)).Append(add);
-            foreach (var item in stateActions)
-            {
-                yield return item;
+                if (rebuildNeeded)
+                    Build();
+                return entry;
             }
         }
-        private Entry Build()
+
+        public void AddState(TTimestamp timestamp,
+                             int typeId,
+                             IUser user,
+                             Func<Removable<TEntry>,
+                             Removable<TEntry>> action)
         {
-            Entry currentEntry = baseEntry;
-            var firstAdd = states.FirstOrDefault(i => i is AddAction);
-            if (firstAdd!= null && firstAdd.User.IsDismiss)
+            rebuildNeeded = true;
+            var state = new StateChanger<Removable<TEntry>>(user, action, typeId);
+            if(states.TryGetValue(timestamp, out var actions))
             {
-                return null;
+                actions.AddLast(state);
+                foreach (var rule in solveConflicRules)
+                {
+                    rule(actions);
+                }
+                return;
             }
-            foreach (var state in states)
+            var linkedList = new LinkedList<StateChanger<Removable<TEntry>>>();
+            linkedList.AddFirst(state);
+            states.Add(timestamp, linkedList);
+        }
+
+        public CalculatedEntity<TTimestamp, TEntry> AddConflicSolveRule(
+                                             Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
+        {
+            solveConflicRules.Add(rule);
+            return this;
+        }
+
+        private void Build()
+        {
+            var firstAddAction = states.FirstOrDefault(v => v.Value.First.Value.StateTypeId == 0);
+            if( firstAddAction.Value != null)
             {
-                if(!state.User.IsDismiss)
-                    currentEntry = state.Invoke(currentEntry != null? currentEntry : baseEntry);
+                var firstAddActionUser = firstAddAction.Value.First.Value.User;
+                if(firstAddActionUser.IsDismiss)
+                {
+                    entry = Removable.CreateRemoved(default(TEntry));
+                    return;
+                }
             }
-            return currentEntry;
+            foreach (var actions in states.Values)
+            {
+                foreach (var action in actions)
+                {
+                    if (!action.User.IsDismiss)
+                    {
+                        entry = action.Action(entry);
+                    }
+                }
+            }
+            rebuildNeeded = false;
         }
     }
 
-    public interface IStateAction
+    public static class CalculatedEntity
     {
-        long Timestamp { get; }
-
-        IUser User { get; }
-
-        Entry Invoke(Entry entry);
-
-        void AddArgument(string name, object value);
+        public static CalculatedEntity<TTimeStamp,TEntry> Create<TTimeStamp, TEntry>() 
+        {
+            return new CalculatedEntity<TTimeStamp, TEntry>();
+        }
     }
 
-    public class AddAction : IStateAction
+    public class Removable<TEntry>
     {
-        private readonly Dictionary<string, object> arguments = new Dictionary<string, object>();
-        public AddAction(long timestamp, IUser user)
+        public bool Removed { get; }
+
+        public TEntry Value { get; }
+
+        public Removable(bool removed, TEntry value)
         {
-            Timestamp = timestamp;
-            User = user;
-        }
+            Removed = removed;
+            Value = value;
+        } 
+    }
 
-        public long Timestamp { get; }
+    public static class Removable
+    {
+        public static Removable<T> CreateRemoved<T>(T value) 
+                                                => new Removable<T>(true, value);
+        public static Removable<T> CreateNotRemoved<T>(T value)
+                                                => new Removable<T>(false, value);
+    }
 
+    public class StateChanger<TEntry>
+    { 
         public IUser User { get; }
 
-        public void AddArgument(string name, object value)
-        {
-            arguments.Add(name, value);
-        }
+        public int StateTypeId { get; }
 
-        public Entry Invoke(Entry entry)
-        { 
-            if (arguments.ContainsKey("Name"))
-                return new Entry(entry.Id, arguments["Name"].ToString(), entry.State);
-            return entry;
+        public Func<TEntry, TEntry> Action { get; }
+
+        public StateChanger(IUser user, Func<TEntry, TEntry> action, int stateTypeId)
+        {
+            User = user;
+            Action = action;
+            StateTypeId = stateTypeId;
         }
     }
 
-    public class RemoveAction : IStateAction
+    public static class LinkedListExtensions
     {
-        public RemoveAction(long timestamp, IUser user)
+        public static IEnumerable<LinkedListNode<T>> Nodes<T>(this LinkedList<T> list)
         {
-            Timestamp = timestamp;
-            User = user;
-        }
-
-        public long Timestamp { get; }
-
-        public IUser User { get; }
-
-        public void AddArgument(string name, object value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Entry Invoke(Entry entry)
-        {
-            return null;
-        }
-    }
-
-    public class MarkDone : IStateAction
-    {
-        public MarkDone(long timestamp, IUser user)
-        {
-            Timestamp = timestamp;
-            User = user;
-        }
-
-        public long Timestamp { get; }
-
-        public IUser User { get; }
-
-        public void AddArgument(string name, object value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Entry Invoke(Entry entry)
-        {
-            return entry.MarkDone();
-        }
-    }
-
-    public class MarkUnDone : IStateAction
-    {
-        public MarkUnDone(long timestamp, IUser user)
-        {
-            Timestamp = timestamp;
-            User = user;
-        }
-        public long Timestamp { get; }
-
-        public IUser User { get; }
-
-        public void AddArgument(string name, object value)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Entry Invoke(Entry entry)
-        {
-            return entry.MarkUndone();
+            var node = list.First;
+            while (node != null)
+            {
+                yield return node;
+                node = node.Next;
+            }
         }
     }
 }

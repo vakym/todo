@@ -55,7 +55,7 @@ namespace ToDoList
                 {
                     newEntry = Entry.Done(entryId, "");
                 }
-                return Removable.CreateNotRemoved(newEntry);
+                return Removable.CreateRemoved(newEntry);
             });
         }
 

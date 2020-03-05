@@ -10,31 +10,71 @@ namespace ToDoList
 {
     public class ToDoList : IToDoList
     {
-        
-
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
-        private readonly Dictionary<int, ICalculatedEntity<Entry>> entities = new Dictionary<int, ICalculatedEntity<Entry>>();
-
+        private readonly Dictionary<int, CalculatedEntity<Entry>> entities = new Dictionary<int, CalculatedEntity<Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
             var entity = GetEntity(entryId);
+            entity.AddState(timestamp,0, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.State == EntryState.Done ? Entry.Done(entryId, name) : Entry.Undone(entryId, name);
+                }
+                else
+                {
+                    newEntry = Entry.Undone(entryId, name);
+                }
+                return Removable.CreateNotRemoved(newEntry);
+            });
            
         }
 
         public void RemoveEntry(int entryId, int userId, long timestamp)
         {
-           
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,1, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                return Removable.CreateRemoved(currentState.Value);
+            });
         }
 
         public void MarkDone(int entryId, int userId, long timestamp)
         {
-            
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,2, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.MarkDone();
+                }
+                else
+                {
+                    newEntry = Entry.Done(entryId, "");
+                }
+                return Removable.CreateNotRemoved(newEntry);
+            });
         }
 
         public void MarkUndone(int entryId, int userId, long timestamp)
         {
-            
+            var entity = GetEntity(entryId);
+            entity.AddState(timestamp,3, usersWarehouse.GetUserById(userId), (currentState) =>
+            {
+                Entry newEntry = null;
+                if (currentState != null)
+                {
+                    newEntry = currentState.Value.MarkUndone();
+                }
+                else
+                {
+                    newEntry = Entry.Undone(entryId, "");
+                }
+                return Removable.CreateNotRemoved(newEntry);
+            });
         }
 
         public void DismissUser(int userId)
@@ -51,8 +91,8 @@ namespace ToDoList
         {
             foreach (var cEntry in entities)
             {
-                if (!cEntry.Value.IsRemoved)
-                    yield return cEntry.Value.Entry;
+                if (!cEntry.Value.Entry.Removed)
+                    yield return cEntry.Value.Entry.Value;
             }
         }
 
@@ -61,7 +101,7 @@ namespace ToDoList
             return GetEnumerator();
         }
 
-        public int Count { get => entities.Where(entry => !entry.Value.IsRemoved)
+        public int Count { get => entities.Where(entry => !entry.Value.Entry.Removed)
                                           .Count(); }
 
         private CalculatedEntity<Entry> GetEntity(int key)
@@ -76,7 +116,29 @@ namespace ToDoList
 
         private void SetConflicSolveRules(CalculatedEntity<Entry> entity)
         {
-
+            entity.AddConflicSolveRule((actions) =>
+            {
+                var removeNodes = actions.Nodes()
+                                         .Where(n => n.Value.StateTypeId == 1);
+                foreach (var node in removeNodes)
+                {
+                    actions.Remove(node);
+                    actions.AddLast(node);
+                }
+            }).AddConflicSolveRule((actions) =>
+            {
+                var addNodes = actions.Nodes()
+                                      .Where(n => n.Value.StateTypeId == 0)
+                                      .OrderByDescending(n => n.Value.User.Id);
+                actions.Remove(addNodes.First());
+                actions.AddAfter(addNodes.Last(), addNodes.First());
+            }).AddConflicSolveRule((actions) => {
+                var statesNodes = actions.Nodes()
+                                         .Where(n => n.Value.StateTypeId == 2 && n.Value.StateTypeId == 3)
+                                         .OrderBy(n => n.Value.StateTypeId);
+                actions.Remove(statesNodes.First());
+                actions.AddAfter(statesNodes.Last(), statesNodes.First());
+            });
         }
 
     }
@@ -144,74 +206,19 @@ namespace ToDoList
         }
     }
     #endregion
-    //public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> 
-    //{
-    //    private readonly Dictionary<TKey, TEntry> entries = new Dictionary<TKey,TEntry>();
 
-    //    public int Count => entries.Count;
-
-    //    public void Add(TKey id, TEntry entity)
-    //    {
-    //        if (entries.ContainsKey(id)) throw new InvalidOperationException();
-    //        entries.Add(id, entity);
-    //    }
-
-    //    public void RemoveById(TKey id)
-    //    {
-    //        if (!entries.ContainsKey(id)) throw new InvalidOperationException();
-    //        entries.Remove(id);
-    //    }
-
-    //    public TEntry GetById(TKey id)
-    //    {
-    //        if (entries.TryGetValue(id, out var value))
-    //            return value;
-    //        return default;
-    //    }
-
-    //    public bool Contains(TKey key)
-    //    {
-    //        return entries.ContainsKey(key);
-    //    }
-
-    //    public IEnumerator<TEntry> GetEnumerator()
-    //    {
-    //        foreach (var item in entries.Values)
-    //        {
-    //                yield return item;
-    //        }
-    //    }
-
-    //    IEnumerator IEnumerable.GetEnumerator()
-    //    {
-    //        return GetEnumerator();
-    //    }
-    //}
-    public interface ICalculatedEntity<out TEntry>
+    public class CalculatedEntity<TEntry>
     {
-        bool IsRemoved { get; }
-        TEntry Entry { get; }
-    }
+        private SortedDictionary<long, LinkedList<StateChanger<Removable<TEntry>>>> states 
+                                                                    = new SortedDictionary<long, LinkedList<StateChanger<Removable<TEntry>>>>();
 
-    public class CalculatedEntity<TEntry> : ICalculatedEntity<TEntry>
-    {
-        
-
-        private LinkedList<Tuple<long, IStateChanger<IUser>>> states = new LinkedList<Tuple<long, IStateChanger<IUser>>>();
-
-        private readonly List<Func<IStateChanger<IUser>>> solveConflicRules = new List<Func<IStateChanger<IUser>>>();
-
+        private readonly List<Action<LinkedList<StateChanger<Removable<TEntry>>>>> solveConflicRules 
+                                                                       = new List<Action<LinkedList<StateChanger<Removable<TEntry>>>>>();
         private bool rebuildNeeded = true;
 
-        private Entry entry;
+        private Removable<TEntry> entry;
 
-        public CalculatedEntity()
-        {
-        }
-
-        public bool IsRemoved { get; private set; }
-
-        public TEntry Entry
+        public Removable<TEntry> Entry
         {
             get
             {
@@ -221,37 +228,99 @@ namespace ToDoList
             }
         }
 
-        public CalculatedEntity<TEntry> AddConflicSolveRule(Func<IStateChanger<IUser>> rule)
+        public void AddState(long timestamp,int typeId, IUser user, Func<Removable<TEntry>, Removable<TEntry>> action)
+        {
+            rebuildNeeded = true;
+            var state = new StateChanger<Removable<TEntry>>(user, action, typeId);
+            if(states.TryGetValue(timestamp, out var actions))
+            {
+                actions.AddLast(state);
+                foreach (var rule in solveConflicRules)
+                {
+                    rule(actions);
+                }
+                return;
+            }
+            var linkedList = new LinkedList<StateChanger<Removable<TEntry>>>();
+            linkedList.AddFirst(state);
+            states.Add(timestamp, linkedList);
+        }
+
+        public CalculatedEntity<TEntry> AddConflicSolveRule(Action<LinkedList<StateChanger<Removable<TEntry>>>> rule)
         {
             solveConflicRules.Add(rule);
             return this;
         }
 
         private void Build()
-        {
-
-            foreach (var action in states)
+        { 
+            foreach (var actions in states.Values)
             {
-                if(!action.Item2.User.IsDismiss)
+                foreach (var action in actions)
                 {
-                    entry = 
+                    if (!action.User.IsDismiss)
+                    {
+                        entry = action.Action(entry);
+                    }
                 }
             }
+            rebuildNeeded = false;
         }
     }
 
     public static class CalculatedEntity
     {
-        public static CalculatedEntity<T> Create<T>()
+        public static CalculatedEntity<T> Create<T>() 
         {
             return new CalculatedEntity<T>();
         }
     }
 
-    public interface IStateChanger<TUser> where TUser : IUser
+    public class Removable<TEntry>
     {
-        long TimeStamp { get; }
-        TUser User { get; }
+        public bool Removed { get; }
+
+        public TEntry Value { get; }
+
+        public Removable(bool removed, TEntry value)
+        {
+            Removed = removed;
+            Value = value;
+        } 
     }
- 
+
+    public static class Removable
+    {
+        public static Removable<T> CreateRemoved<T>(T value) => new Removable<T>(true, value);
+        public static Removable<T> CreateNotRemoved<T>(T value) => new Removable<T>(false, value);
+    }
+
+    public class StateChanger<TEntry>
+    { 
+        public IUser User { get; }
+
+        public int StateTypeId { get; }
+
+        public Func<TEntry, TEntry> Action { get; }
+
+        public StateChanger(IUser user, Func<TEntry, TEntry> action, int stateTypeId)
+        {
+            User = user;
+            Action = action;
+            StateTypeId = stateTypeId;
+        }
+    }
+
+    public static class LinkedListExtensions
+    {
+        public static IEnumerable<LinkedListNode<T>> Nodes<T>(this LinkedList<T> list)
+        {
+            var node = list.First;
+            while (node != null)
+            {
+                yield return node;
+                node = node.Next;
+            }
+        }
+    }
 }

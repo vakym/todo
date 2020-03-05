@@ -13,7 +13,7 @@ namespace ToDoList
         
 
         private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
-        private readonly EntryWarehouse<int, Entry> entities = new EntryWarehouse<int, Entry>();
+        private readonly EntryWarehouse<int, ICalculatedEntity<Entry>> entities = new EntryWarehouse<int, ICalculatedEntity<Entry>>();
 
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
@@ -172,13 +172,13 @@ namespace ToDoList
     }
 
 
-    public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<ICalculatedEntity<TEntry>> 
+    public class EntryWarehouse<TKey, TEntry> : IReadOnlyCollection<TEntry> 
     {
-        private readonly Dictionary<TKey, ICalculatedEntity<TEntry>> entries = new Dictionary<TKey, ICalculatedEntity<TEntry>>();
+        private readonly Dictionary<TKey, TEntry> entries = new Dictionary<TKey,TEntry>();
 
         public int Count => entries.Count;
 
-        public void Add(TKey id, ICalculatedEntity<TEntry> entity)
+        public void Add(TKey id, TEntry entity)
         {
             if (entries.ContainsKey(id)) throw new InvalidOperationException();
             entries.Add(id, entity);
@@ -193,11 +193,11 @@ namespace ToDoList
         public TEntry GetById(TKey id)
         {
             if (entries.TryGetValue(id, out var value))
-                return value.Entry;
+                return value;
             return default;
         }
 
-        public IEnumerator<ICalculatedEntity<TEntry>> GetEnumerator()
+        public IEnumerator<TEntry> GetEnumerator()
         {
             foreach (var item in entries.Values)
             {

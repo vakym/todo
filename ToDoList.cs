@@ -3,30 +3,37 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
+//*Исправлены замечания
+//*Оптимизированы правила разрешения конфликтов
+//*оптимизирован метод Build() теперь он проходит по коллекциям только один раз
+
 namespace ToDoList
 {
     public class ToDoList : IToDoList
     {
-        private readonly UsersWarehouse usersWarehouse = new UsersWarehouse();
+        private readonly UsersStorage users = new UsersStorage();
         private readonly Dictionary<int, CalculatedEntry<long, Entry>> entryWarehouse
                                           = new Dictionary<int, CalculatedEntry<long, Entry>>();
 
         public void AddEntry(int entryId, int userId, string name, long timestamp)
         {
             var entry = GetEntry(entryId);
-            entry.AddState(timestamp, ActionType.Add, usersWarehouse.GetUserById(userId), (currentEntry) =>
+            entry.AddState(timestamp,
+                           ActionType.Add,
+                           users.GetUserById(userId),
+                           (currentEntry) =>
             {
                 Entry newEntry;
                 if (currentEntry != null)
                 {
-                    newEntry = currentEntry.State == EntryState.Done ? Entry.Done(entryId, name) :
-                                                                       Entry.Undone(entryId, name);
+                    newEntry = currentEntry.Value.State == EntryState.Done ? Entry.Done(entryId, name) :
+                                                                             Entry.Undone(entryId, name);
                 }
                 else
                 {
                     newEntry = Entry.Undone(entryId, name);
                 }
-                return newEntry;
+                return Removable.CreateNotRemoved(newEntry);
             });
         }
 
@@ -34,7 +41,8 @@ namespace ToDoList
         {
             ProcessEntry(entryId, timestamp, userId, ActionType.Remove, (currentEntry) =>
             {
-                return null;
+                return currentEntry != null ? Removable.CreateRemoved(currentEntry.Value) :
+                                              Removable.CreateRemoved(Entry.Undone(entryId, ""));
             });
         }
 
@@ -44,11 +52,11 @@ namespace ToDoList
             {
                 if (currentEntry != null)
                 {
-                    return currentEntry.MarkDone();
+                    return Removable.CreateNotRemoved(currentEntry.Value.MarkDone());
                 }
                 else
                 {
-                    return Entry.Done(entryId, "");
+                    return Removable.CreateNotRemoved(Entry.Done(entryId, ""));
                 }
             });
         }
@@ -59,31 +67,31 @@ namespace ToDoList
             {
                 if (currentEntry != null)
                 {
-                    return currentEntry.MarkUndone();
+                    return Removable.CreateNotRemoved(currentEntry.Value.MarkUndone());
                 }
                 else
                 {
-                    return Entry.Undone(entryId, "");
+                    return Removable.CreateNotRemoved(Entry.Undone(entryId, ""));
                 }
             });
         }
 
         public void DismissUser(int userId)
         {
-            usersWarehouse.DismissUser(userId);
+            users.DismissUser(userId);
         }
 
         public void AllowUser(int userId)
         {
-            usersWarehouse.AllowUser(userId);
+            users.AllowUser(userId);
         }
 
         public IEnumerator<Entry> GetEnumerator()
         {
             foreach (var entry in entryWarehouse)
             {
-                if (entry.Value.Entry != null)
-                    yield return entry.Value.Entry;
+                if (!entry.Value.Entry.Removed)
+                    yield return entry.Value.Entry.Value;
             }
         }
 
@@ -92,17 +100,17 @@ namespace ToDoList
             return GetEnumerator();
         }
 
-        public int Count { get => entryWarehouse.Where(pair => pair.Value.Entry != null)
+        public int Count { get => entryWarehouse.Where(pair => !pair.Value.Entry.Removed)
                                                 .Count(); }
 
         private void ProcessEntry(int entryId,
                                  long timestamp,
                                  int userId,
                                  ActionType type,
-                                 Func<Entry, Entry> action)
+                                 Func<Removable<Entry>, Removable<Entry>> action)
         {
             var entry = GetEntry(entryId);
-            entry.AddState(timestamp, type, usersWarehouse.GetUserById(userId), action);
+            entry.AddState(timestamp, type, users.GetUserById(userId), action);
         }
 
         private CalculatedEntry<long,Entry> GetEntry(int entryId)
@@ -149,7 +157,7 @@ namespace ToDoList
         }
     }
 
-    public class UsersWarehouse
+    public class UsersStorage
     {
         private readonly Dictionary<int, IUser> users = new Dictionary<int, IUser>();
 
@@ -182,26 +190,27 @@ namespace ToDoList
     #region entry logic
     public class CalculatedEntry<TTimestamp,TEntry>
     {
-        private readonly SortedDictionary<TTimestamp, State<TEntry>> states;
-                      
+        private readonly SortedDictionary<TTimestamp, State<Removable<TEntry>>> states 
+                                          = new SortedDictionary<TTimestamp, State<Removable<TEntry>>>();
+
         private bool rebuildNeeded = true;
 
-        private TEntry entry;
+        private Removable<TEntry> entry;
 
         private void Build()
         {
-            var firstAdd = true;
+            var isFirstAddAction = true;
             foreach (var state in states.Values)
             {
                 foreach (var change in state.GetChanges())
                 {
                     if (change.Type == ActionType.Add &&
-                        firstAdd)
+                        isFirstAddAction)
                     {
-                        firstAdd = false;
+                        isFirstAddAction = false;
                         if (change.User.IsDismiss)
                         {
-                            entry = default;
+                            entry = Removable.CreateRemoved(default(TEntry));
                             return;
                         }
                     }
@@ -213,17 +222,12 @@ namespace ToDoList
                 }
             }
 
-            if (firstAdd)
-                entry = default;
+            if (isFirstAddAction)
+                entry = Removable.CreateRemoved(default(TEntry));
             rebuildNeeded = false;
         }
 
-        public CalculatedEntry()
-        {
-            states = new SortedDictionary<TTimestamp, State<TEntry>>();
-        }
-
-        public TEntry Entry
+        public Removable<TEntry> Entry
         {
             get
             {
@@ -236,22 +240,21 @@ namespace ToDoList
         public void AddState(TTimestamp timestamp,
                              ActionType type,
                              IUser user,
-                             Func<TEntry, TEntry> action)
+                             Func<Removable<TEntry>, Removable<TEntry>> action)
         {
             rebuildNeeded = true;
-            var state = new ChangeState<TEntry>(user, action, type);
+            var change = new ChangeState<Removable<TEntry>>(user, action, type);
             if(states.TryGetValue(timestamp, out var currentStates))
             {
-                currentStates.AddState(state);
+                currentStates.AddChange(change);
                 return;
             }
-            var linkedList = new State<TEntry>();
-            linkedList.AddState(state);
-            states.Add(timestamp, linkedList);
+            var newState = new State<Removable<TEntry>>();
+            newState.AddChange(change);
+            states.Add(timestamp, newState);
         }
     }
-    #endregion
-
+    
     public class ChangeState<TEntry>
     { 
         public IUser User { get; }
@@ -270,24 +273,47 @@ namespace ToDoList
         }
     }
 
+    public class Removable<TEntity>
+    {
+        public bool Removed { get; }
+
+        public TEntity Value { get; }
+
+        public Removable(bool removed, TEntity value)
+        {
+            Removed = removed;
+            Value = value;
+        }
+    }
+
+    public static class Removable
+    {
+        public static Removable<TEntity> CreateRemoved<TEntity>(TEntity value)
+                                                => new Removable<TEntity>(true, value);
+        public static Removable<TEntity> CreateNotRemoved<TEntity>(TEntity value)
+                                                => new Removable<TEntity>(false, value);
+    }
+
+
     public class State<TEntry>
     {
-        private SortedDictionary<ActionType, ChangeState<TEntry>> changesWihtSameTime = new SortedDictionary<ActionType, ChangeState<TEntry>>();
+        private readonly SortedDictionary<ActionType, ChangeState<TEntry>> changesWihtSameTime 
+                                             = new SortedDictionary<ActionType, ChangeState<TEntry>>();
 
-        private Dictionary<ActionType, Action<ChangeState<TEntry>>> conflictSolveRules 
-                                                                        = new Dictionary<ActionType, Action<ChangeState<TEntry>>>();
+        private readonly Dictionary<ActionType, Action<ChangeState<TEntry>>> conflictSolveRules 
+                                             = new Dictionary<ActionType, Action<ChangeState<TEntry>>>();
        
         public State()
         {
             SetConflictSolveRules();
         }
 
-        public void AddState(ChangeState<TEntry> state)
+        public void AddChange(ChangeState<TEntry> change)
         {
-            if (conflictSolveRules.TryGetValue(state.Type, out var rule))
-                rule(state);
+            if (conflictSolveRules.TryGetValue(change.Type, out var rule))
+                rule(change);
             else
-                changesWihtSameTime.Add(state.Type, state);
+                changesWihtSameTime.Add(change.Type, change);
         }
 
         public IEnumerable<ChangeState<TEntry>> GetChanges()
@@ -326,7 +352,7 @@ namespace ToDoList
             });
         }
     }
-
+    #endregion
     public enum ActionType
     {
         Add,

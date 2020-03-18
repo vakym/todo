@@ -54,6 +54,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Class1.cs" />
     <Compile Include="Entry.cs" />
     <Compile Include="EntryState.cs" />
     <Compile Include="IToDoList.cs" />

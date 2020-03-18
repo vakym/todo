@@ -43,6 +43,13 @@ namespace ToDoList
 
 
         [Test]
+        public void Mark_Done_Nothing()
+        {
+            list.MarkDone(42, 10, 100);
+            AssertListEmpty();
+        }
+
+        [Test]
         public void Not_Remove_Entry_If_Removal_Timestamp_Is_Less_Than_Entry_Timestamp(
             [Values(userA, userB, userC)] int removingUserId)
         {

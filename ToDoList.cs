@@ -49,8 +49,7 @@ namespace ToDoList
                 }
                 else
                 {
-                    var newEntry = Entry.Done(entryId, "");
-                    return newEntry;
+                    return null;
                 }
             });
         }
@@ -66,8 +65,7 @@ namespace ToDoList
                 }
                 else
                 {
-                    var newEntry = Entry.Undone(entryId, "");
-                    return newEntry;
+                    return null;
                 }
             });
         }

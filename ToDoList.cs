@@ -275,7 +275,8 @@ namespace ToDoList
     {
         private Dictionary<ActionType, ChangeState<TEntry>> statesWihtSameTime = new Dictionary<ActionType, ChangeState<TEntry>>();
 
-        private Dictionary<ActionType, Action<ChangeState<TEntry>>> conflictSolveRules = new Dictionary<ActionType, Action<ChangeState<TEntry>>>();
+        private Dictionary<ActionType, Action<ChangeState<TEntry>>> conflictSolveRules 
+                                                                        = new Dictionary<ActionType, Action<ChangeState<TEntry>>>();
        
         public State()
         {
@@ -318,15 +319,12 @@ namespace ToDoList
             });
 
             conflictSolveRules.Add(ActionType.Done, (newState) => {
-                if (statesWihtSameTime.ContainsKey(ActionType.Remove) ||
-                    statesWihtSameTime.ContainsKey(ActionType.Undone))
+                if (statesWihtSameTime.ContainsKey(ActionType.Undone))
                     return;
                 statesWihtSameTime.Add(newState.Type, newState);
             });
 
             conflictSolveRules.Add(ActionType.Undone, (newState) => {
-                if (statesWihtSameTime.ContainsKey(ActionType.Remove))                    
-                    return;
                 statesWihtSameTime.Remove(ActionType.Done);
                 statesWihtSameTime.Add(newState.Type, newState);
             });

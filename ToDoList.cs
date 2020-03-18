@@ -44,12 +44,11 @@ namespace ToDoList
             {
                 if (currentEntry != null)
                 {
-                    var newEntry = currentEntry.MarkDone();
-                    return newEntry;
+                    return currentEntry.MarkDone();
                 }
                 else
                 {
-                    return null;
+                    return Entry.Done(entryId, "");
                 }
             });
         }
@@ -60,12 +59,11 @@ namespace ToDoList
             {
                 if (currentEntry != null)
                 {
-                    var newEntry = currentEntry.MarkUndone();
-                    return newEntry;
+                    return currentEntry.MarkUndone();
                 }
                 else
                 {
-                    return null;
+                    return Entry.Undone(entryId, "");
                 }
             });
         }
@@ -214,6 +212,9 @@ namespace ToDoList
                     }
                 }
             }
+
+            if (firstAdd)
+                entry = default;
             rebuildNeeded = false;
         }
 
@@ -271,7 +272,7 @@ namespace ToDoList
 
     public class State<TEntry>
     {
-        private Dictionary<ActionType, ChangeState<TEntry>> statesWihtSameTime = new Dictionary<ActionType, ChangeState<TEntry>>();
+        private SortedDictionary<ActionType, ChangeState<TEntry>> changesWihtSameTime = new SortedDictionary<ActionType, ChangeState<TEntry>>();
 
         private Dictionary<ActionType, Action<ChangeState<TEntry>>> conflictSolveRules 
                                                                         = new Dictionary<ActionType, Action<ChangeState<TEntry>>>();
@@ -286,45 +287,42 @@ namespace ToDoList
             if (conflictSolveRules.TryGetValue(state.Type, out var rule))
                 rule(state);
             else
-                statesWihtSameTime.Add(state.Type, state);
+                changesWihtSameTime.Add(state.Type, state);
         }
 
         public IEnumerable<ChangeState<TEntry>> GetChanges()
         {
-            foreach (var state in statesWihtSameTime)
+            foreach (var change in changesWihtSameTime)
             {
-                yield return state.Value;
+                yield return change.Value;
             }
         }
 
         private void SetConflictSolveRules()
         {
             conflictSolveRules.Add(ActionType.Remove, (newState) => {
-                statesWihtSameTime.Clear();
-                statesWihtSameTime.Add(newState.Type, newState);
+                changesWihtSameTime.Add(newState.Type, newState);
             });
 
             conflictSolveRules.Add(ActionType.Add, (newState) => {
-                if (statesWihtSameTime.ContainsKey(ActionType.Remove))
-                    return;
-                if (statesWihtSameTime.TryGetValue(newState.Type, out var change))
+                if (changesWihtSameTime.TryGetValue(newState.Type, out var change))
                 {
                     if (change.User.Id > newState.User.Id)
-                        statesWihtSameTime[newState.Type] = newState;
+                        changesWihtSameTime[newState.Type] = newState;
                 }
                 else
-                    statesWihtSameTime.Add(newState.Type, newState);
+                    changesWihtSameTime.Add(newState.Type, newState);
             });
 
             conflictSolveRules.Add(ActionType.Done, (newState) => {
-                if (statesWihtSameTime.ContainsKey(ActionType.Undone))
+                if (changesWihtSameTime.ContainsKey(ActionType.Undone))
                     return;
-                statesWihtSameTime.Add(newState.Type, newState);
+                changesWihtSameTime.Add(newState.Type, newState);
             });
 
             conflictSolveRules.Add(ActionType.Undone, (newState) => {
-                statesWihtSameTime.Remove(ActionType.Done);
-                statesWihtSameTime.Add(newState.Type, newState);
+                changesWihtSameTime.Remove(ActionType.Done);
+                changesWihtSameTime.Add(newState.Type, newState);
             });
         }
     }
@@ -334,6 +332,6 @@ namespace ToDoList
         Add,
         Remove,
         Done,
-        Undone
+        Undone,
     }
 }

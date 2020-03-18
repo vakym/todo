@@ -29,12 +29,13 @@ namespace ToDoList
 
         [Test]
         public void Mark_Done_After_Removal(
-            [Values(userA, userB, userC)] int removingUserId,
+            [Values(userA)] int removingUserId,
             [Values(200, 101, 100)] long removingTimestamp,
-            [Values(userA, userB, userC)] int markDoneUserId,
-            [Values(200, 101, 100)] long markDoneTimestamp)
+            [Values(userA)] int markDoneUserId,
+            [Values(200, 101, 100)] long markDoneTimestamp,
+            [Values(200,101,100)] long addTimestamp)
         {
-            list.AddEntry(42, removingUserId, "", removingTimestamp);
+            list.AddEntry(42, removingUserId, "", addTimestamp);
             list.RemoveEntry(42, removingUserId, removingTimestamp);
             list.MarkDone(42, markDoneUserId, markDoneTimestamp);
            
